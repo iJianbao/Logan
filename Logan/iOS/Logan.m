@@ -101,7 +101,7 @@ void loganUploadFilePath(NSString *_Nonnull date, LoganFilePathBlock _Nonnull fi
 }
 
 void loganUpload(NSString * _Nonnull url, NSString * _Nonnull date,NSString * _Nullable appId, NSString *_Nullable unionId,NSString *_Nullable deviceId, LoganUploadResultBlock _Nullable resultBlock){
-	[Logan uploadFileToServer:url date:date appId:appId unionId:unionId deviceId:deviceId resultBlock:resultBlock];
+    [Logan uploadFileToServer:url date:date appId:appId unionId:unionId deviceId:deviceId resultBlock:resultBlock];
 }
 
 void loganFlush(void) {
@@ -174,7 +174,7 @@ NSString *_Nonnull loganTodaysDate(void) {
     dispatch_async(self.loganQueue, ^{
         NSString *today = [Logan currentDate];
         if (self.lastLogDate && ![self.lastLogDate isEqualToString:today]) {
-                // 日期变化，立即写入日志文件
+            // 日期变化，立即写入日志文件
             clogan_flush();
             clogan_open((char *)today.UTF8String);
         }
@@ -209,10 +209,10 @@ NSString *_Nonnull loganTodaysDate(void) {
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (now > (_lastCheckFreeSpace + 60)) {
         _lastCheckFreeSpace = now;
-            // 每隔至少1分钟，检查一下剩余空间
+        // 每隔至少1分钟，检查一下剩余空间
         long long freeDiskSpace = [self freeDiskSpaceInBytes];
         if (freeDiskSpace <= 5 * 1024 * 1024) {
-                // 剩余空间不足5m时，不再写入
+            // 剩余空间不足5m时，不再写入
             return NO;
         }
     }
@@ -298,7 +298,7 @@ NSString *_Nonnull loganTodaysDate(void) {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(appDidEnterBackground) name:NSApplicationDidResignActiveNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(appWillTerminate) name:NSApplicationWillTerminateNotification object:nil];
 #endif
-
+    
 }
 
 - (void)appWillResignActive {
@@ -392,48 +392,58 @@ NSString *_Nonnull loganTodaysDate(void) {
 #pragma mark - file
 
 + (void)uploadFileToServer:(NSString *)urlStr date:(NSString *)date appId:(NSString *)appId unionId:(NSString *)unionId deviceId:(NSString *)deviceId resultBlock:(LoganUploadResultBlock)resultBlock {
-	loganUploadFilePath(date, ^(NSString *_Nullable filePatch) {
-		if (filePatch == nil) {
-			if(resultBlock){
-				dispatch_async(dispatch_get_main_queue(), ^{
-					NSError * error = [NSError errorWithDomain:@"come.meituan.logan.error" code:-100 userInfo:@{@"info" : [NSString stringWithFormat:@"can't find file of %@",date]}];
-					resultBlock(nil,nil,error);
-				});
-			}
-			return;
-		}
-		NSURL *url = [NSURL URLWithString:urlStr];
-		NSMutableURLRequest *req = [[NSMutableURLRequest alloc] initWithURL:url cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:60];
-		[req setHTTPMethod:@"POST"];
-		[req addValue:@"binary/octet-stream" forHTTPHeaderField:@"Content-Type"];
-		if(appId.length >0){
-			[req addValue:appId forHTTPHeaderField:@"appId"];
-		}
-		if(unionId.length >0){
-			[req addValue:unionId forHTTPHeaderField:@"unionId"];
-		}
-		NSString *bundleVersion = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleVersion"];
-		if (bundleVersion.length > 0) {
-			[req addValue:bundleVersion forHTTPHeaderField:@"bundleVersion"];
-		}
-		
-		if(deviceId.length >0){
-			[req addValue:deviceId forHTTPHeaderField:@"deviceId"];
-		}
-		[req addValue:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] forHTTPHeaderField:@"appVersion"];
-		[req addValue:@"2" forHTTPHeaderField:@"platform"];
-		[req addValue:date forHTTPHeaderField:@"fileDate"];
-		
-		NSURL *fileUrl = [NSURL fileURLWithPath:filePatch];
-		NSURLSessionUploadTask *task = [[NSURLSession sharedSession] uploadTaskWithRequest:req fromFile:fileUrl completionHandler:^(NSData *_Nullable data, NSURLResponse *_Nullable response, NSError *_Nullable error) {
-			if(resultBlock){
-				dispatch_async(dispatch_get_main_queue(), ^{
-					resultBlock(data,response,error);
-				});
-			}
-		}];
-		[task resume];
-	});
+    loganUploadFilePath(date, ^(NSString *_Nullable filePatch) {
+        if (filePatch == nil) {
+            if(resultBlock){
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    NSError * error = [NSError errorWithDomain:@"come.meituan.logan.error" code:-100 userInfo:@{@"info" : [NSString stringWithFormat:@"can't find file of %@",date]}];
+                    resultBlock(nil,nil,error);
+                });
+            }
+            return; 
+        }
+        
+        unsigned long long gzFileSize = [Logan fileSizeAtPath:filePatch];
+        if (gzFileSize == 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSError * error = [NSError errorWithDomain:@"come.meituan.logan.error" code:-101 userInfo:@{@"info" : [NSString stringWithFormat:@"file is empty %@",date]}];
+                resultBlock(nil,nil,error);
+            });
+            return;
+        }
+        
+        NSURL *url = [NSURL URLWithString:urlStr];
+        NSMutableURLRequest *req = [[NSMutableURLRequest alloc] initWithURL:url cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:60];
+        [req setHTTPMethod:@"POST"];
+        [req addValue:@"binary/octet-stream" forHTTPHeaderField:@"Content-Type"];
+        if(appId.length >0){
+            [req addValue:appId forHTTPHeaderField:@"appId"];
+        }
+        if(unionId.length >0){
+            [req addValue:unionId forHTTPHeaderField:@"unionId"];
+        }
+        NSString *bundleVersion = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleVersion"];
+        if (bundleVersion.length > 0) {
+            [req addValue:bundleVersion forHTTPHeaderField:@"bundleVersion"];
+        }
+        
+        if(deviceId.length >0){
+            [req addValue:deviceId forHTTPHeaderField:@"deviceId"];
+        }
+        [req addValue:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] forHTTPHeaderField:@"appVersion"];
+        [req addValue:@"2" forHTTPHeaderField:@"platform"];
+        [req addValue:date forHTTPHeaderField:@"fileDate"];
+        
+        NSURL *fileUrl = [NSURL fileURLWithPath:filePatch];
+        NSURLSessionUploadTask *task = [[NSURLSession sharedSession] uploadTaskWithRequest:req fromFile:fileUrl completionHandler:^(NSData *_Nullable data, NSURLResponse *_Nullable response, NSError *_Nullable error) {
+            if(resultBlock){
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    resultBlock(data,response,error);
+                });
+            }
+        }];
+        [task resume];
+    });
 }
 
 + (void)deleteOutdatedFiles {
@@ -442,24 +452,24 @@ NSString *_Nonnull loganTodaysDate(void) {
     NSString *dateFormatString = @"yyyy-MM-dd";
     [formatter setDateFormat:dateFormatString];
     [allFiles enumerateObjectsUsingBlock:^(NSString *_Nonnull dateStr, NSUInteger idx, BOOL *_Nonnull stop) {
-            // 检查后缀名
+        // 检查后缀名
         if ([dateStr pathExtension].length > 0) {
             [self deleteLoganFile:dateStr];
             return;
         }
         
-            // 检查文件名长度
+        // 检查文件名长度
         if (dateStr.length != (dateFormatString.length)) {
             [self deleteLoganFile:dateStr];
             return;
         }
-            // 文件名转化为日期
+        // 文件名转化为日期
         dateStr = [dateStr substringToIndex:dateFormatString.length];
         NSDate *date = [formatter dateFromString:dateStr];
         NSString *todayStr = [Logan currentDate];
         NSDate *todayDate = [formatter dateFromString:todayStr];
         if (!date || [self getDaysFrom:date To:todayDate] >= __max_reversed_date) {
-                // 删除过期文件
+            // 删除过期文件
             [self deleteLoganFile:dateStr];
         }
     }];
