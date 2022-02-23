@@ -1,30 +1,13 @@
-/*
- * Copyright (c) 2018-present, 美团点评
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- */
-
 package com.meituan.flutter_logan;
 
 import android.content.Context;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+
+import androidx.annotation.NonNull;
 
 import com.dianping.logan.Logan;
 import com.dianping.logan.LoganConfig;
@@ -37,17 +20,19 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 
+import io.flutter.Log;
+import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
-import io.flutter.plugin.common.PluginRegistry.Registrar;
 
-/**
- * FlutterLoganPlugin
- */
-public class FlutterLoganPlugin implements MethodCallHandler {
-
+/** FlutterLoganPlugin11 */
+public class FlutterLoganPlugin implements FlutterPlugin, MethodCallHandler {
+  /// The MethodChannel that will the communication between Flutter and native Android
+  ///
+  /// This local reference serves to register the plugin with the Flutter Engine and unregister it
+  /// when the Flutter Engine is detached from the Activity
   private static Executor sExecutor;
   private static Executor sMainExecutor = new Executor() {
     private Handler mMainHandler = new Handler();
@@ -61,48 +46,52 @@ public class FlutterLoganPlugin implements MethodCallHandler {
       }
     }
   };
+
   private Context mContext;
   private String mLoganFilePath;
+  private MethodChannel channel;
 
-  /**
-   * Plugin registration.
-   */
-  public static void registerWith(Registrar registrar) {
-    final MethodChannel channel = new MethodChannel(registrar.messenger(), "flutter_logan");
-    channel.setMethodCallHandler(new FlutterLoganPlugin(registrar.context()));
+  @Override
+  public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
+    if (mContext == null) {
+      mContext = flutterPluginBinding.getApplicationContext();
+    }
+    channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "flutter_logan");
+    channel.setMethodCallHandler(this);
   }
 
-  public FlutterLoganPlugin(Context context) {
-    mContext = context.getApplicationContext();
+  @Override
+  public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
+    channel.setMethodCallHandler(null);
   }
 
   /**
    * @param result the reply methods of result MUST be invoked on main thread
    */
   @Override
-  public void onMethodCall(MethodCall call, Result result) {
+  public void onMethodCall(MethodCall call, @NonNull Result result) {
     switch (call.method) {
-    case "init":
-      loganInit(call.arguments, result);
-      break;
-    case "log":
-      log(call.arguments, result);
-      break;
-    case "flush":
-      flush(result);
-      break;
-    case "getUploadPath":
-      getUploadPath(call.arguments, result);
-      break;
-    case "upload":
-      uploadToServer(call.arguments, result);
-      break;
-    case "cleanAllLogs":
-      cleanAllLog(result);
-      break;
-    default:
-      result.notImplemented();
-      break;
+      case "init":
+        loganInit(call.arguments, result);
+        break;
+      case "log":
+        log(call.arguments, result);
+        break;
+      case "flush":
+        flush(result);
+        break;
+      case "getUploadPath":
+        getUploadPath(call.arguments, result);
+        break;
+      case "upload":
+        uploadToServer(call.arguments, result);
+        break;
+      case "cleanAllLogs":
+        cleanAllLog(result);
+        break;
+      default:
+        result.notImplemented();
+        break;
     }
   }
 
@@ -145,9 +134,9 @@ public class FlutterLoganPlugin implements MethodCallHandler {
     }
     mLoganFilePath = file.getAbsolutePath() + File.separator + "logan_v1";
     builder.setCachePath(mContext.getFilesDir().getAbsolutePath())
-           .setPath(mLoganFilePath)
-           .setEncryptKey16(encryptKey.getBytes())
-           .setEncryptIV16(encryptIV.getBytes());
+            .setPath(mLoganFilePath)
+            .setEncryptKey16(encryptKey.getBytes())
+            .setEncryptIV16(encryptIV.getBytes());
     Logan.init(builder.build());
     result.success(true);
   }
@@ -254,6 +243,30 @@ public class FlutterLoganPlugin implements MethodCallHandler {
       result.success(false);
       return;
     }
+    final String appId = Utils.getString((Map) args, "appId");
+    final String unionId = Utils.getString((Map) args, "unionId");
+    final String deviceId = Utils.getString((Map) args, "deviceId");
+    final String buildVersion = "30.0.0";
+    String versionName = "unKnow";
+    int versionCode = 0;
+    try {
+      PackageManager packageManager = mContext.getPackageManager();
+      PackageInfo packageInfo = packageManager.getPackageInfo(
+              mContext.getPackageName(), 0);
+      versionName = packageInfo.versionName;
+      versionCode = packageInfo.versionCode;
+    } catch (PackageManager.NameNotFoundException e) {
+      e.printStackTrace();
+    }
+    Log.d("logan上传", args.toString());
+    Logan.s(serverUrl, date, appId, unionId, deviceId, buildVersion, "" + versionCode, (statusCode, data) -> {
+      final String resultData = data != null ? new String(data) : "";
+      Log.d("1", "日志上传结果, http状态码: " + statusCode + ", 详细: " + resultData);
+      new Handler(Looper.getMainLooper()).post(() -> {
+        result.success(statusCode == 200);
+      });
+    });
+    /*
     final RealSendLogRunnable sendLogRunnable = new RealSendLogRunnable() {
       @Override
       protected void onSuccess(boolean success) {
@@ -269,6 +282,6 @@ public class FlutterLoganPlugin implements MethodCallHandler {
     }
     sendLogRunnable.setUrl(serverUrl);
     Logan.s(new String[]{date}, sendLogRunnable);
+    */
   }
-
 }
